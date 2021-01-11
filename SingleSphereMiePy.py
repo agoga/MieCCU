@@ -1,4 +1,7 @@
 #below code adapted from http://scatterlib.wikidot.com/mie see python version
+#Original version of code used is stored in MeiPy/MieBh Original.ipynb
+
+
 #Please see license at http://creativecommons.org/licenses/by-sa/3.0/
 from numpy import *
 

@@ -1,3 +1,5 @@
+#Author: Adam Goga
+
 from numpy import *
 from SingleSphereMiePy import bhmie
 
