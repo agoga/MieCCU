@@ -1,50 +1,129 @@
 from numpy import *
+from SingleSphereMiePy import bhmie
 
-#the meat and bones calculator to create scattering coefficients. Code is adapted from in "Absorbtion and Scattering" by Bohren, Huffman, which will be referred to as A&S or the book from now on. All page numbers listed are the PDF page numbers not book page numbers. The discussion of the why and how for the recurrence code begins at page 140. The original Fortran code begins on page 491.
-#attempting to borrow as many var/function names from book as possible
-#Primary goal is to calculate scattering coefficients a_n and b_n with funcitons pi_n and tau_n then sum
-#################################################################
+#physical setup should be as follows
+#emitter is at x=0 and the middle of the lattice should be at x=0. Not implementing emitter distance
+#from lattice as we should follow functional form for the intensity fall off to determine initial
+#field strength
+#all units in meters
+pii = 4.*arctan(1.)#done in the miepy code so we will use it but I dont like it.
+radius = .005#sphere radius
+lamda = .03
+k = 2*pii / lamda
+x = 2*3.14159265*radius*1/lamda
 
-
-#function MeiParams
-#calculates the size parameter x and relative refraction index for sphere and medium
-#INPUTS
-#sphereRef - spheres refraction index
-#mediumRef - medium refraction index
-#r - radius of sphere
-#lamdaFS - free space wavelength
-#numAng - number of angles between 0 and 90 deg
-#        Matrix elements calculated at 2*numAng - 1 angles including 0,90, and 180
-#OUTPUTS
-#x is the size parameter, require about x terms in series for convergence(p. 491)
-#refRel is the refraction index of the medium
-#################################################################
-refMed = 1.0
-
-refRe = 1.55
-refIm = 0.0
-
-#refRel = Cmplx(refRemrefIm)/refMed
-
-#x = 2 * pi * r * refMed/lamdaFS
+Efield = 0
+Etot = 0
+z=0#assuming the level plane
 
 
+refrel = 2.75681
+
+#The following code will create an array of field data for each sphere for the specified number of
+#a from center of lattice and angles to measure around the lattice this code
+#will convert each distance and angle into distances and angles relative to the position of each given sphere
+#sphere. That is, for every radius and angle given each sphere will have their own angle and radius
+a = radius #spheres radius, all spheres should be same radius though it is not a hard fix
+
+
+#TODO is this correct
+#place emitter at 1 unit away down y axis
+r_e = [0,-1]
+
+
+def FieldAtR(spheres, rMag, ri, r_sp, detectAng):
+    
+    
+    numAng = len(detectAng)
+    numSpheres = len(r_sp)
+    
+    global Etot
+    global Efield
+    Etot = zeros(numAng,dtype=complex)
+#for every sphere we will find r_s_d and theta_s_d
+    for s in range(numSpheres):   
+        #should not change based on detector movement
+        r_s = r_sp[s]
+        r_e_s = subtract(r_s,r_e)
+        
+        #Ei = EmitterIntensity
+        Ei = 1#specific incoming field for this sphere
+        
+        #print('Sphere at position: ' + str(r_s))
+        #print('Detector radius: ' + str(r))
+
+        #this sphere will have a specific R and Theta for every R and Theta we are taking measurements for
+        sRList = []
+        sThetaList = []
+        for j in range(numAng):
+            theta_d = detectAng[j]
+            #this is r_d relative to origin
+            r_d = [rMag * sin(theta_d), rMag * cos(theta_d)]
+            #calculate detector vectors.... inspector
+            r_s_d = subtract(r_d,r_s)
+            
+            #update list of this radius's from this sphere for final field caluclation
+            sRList.append(r_s_d)
+                  
+            #print("r_d - r_sp: " + str(rdTmp) + ' - ' + str(r_sp[s]) + ' = ' + str(r_s_d))
+            
+            #calculate the numerator dot product and denomenators scalar val
+            #dot emitter to sphere and sphere to detector
+            numDot = dot(r_e_s,r_s_d)
+            #print('r_e dot r_s_d = ' + str(numDot))
+            
+            demVal = linalg.norm(r_s_d)*linalg.norm(r_e_s)
+            #print("|r_s_d||r_e| = " + str(demVal))
+            
+            #list of cos(theta) specific to this sphere
+            sThetaList.append(numDot/demVal)
+           # print('cos ( theta_sp ) = ' + str(numDot/demVal))
+            #end angle loop
+        
+        #sanity check, all of these should be the same
+        #for r in r_D:
+        #   print(linalg.norm(r_D))
+        #end specific sphere loop
+       # print('------------------------')
+    
+        #we have out list of angles and radius for this sphere
+
+        #get the solutions
+                                                #MUST CAST ARRAY AND NMPY ARRAY
+        S1,S2 = bhmie(x,refrel,array(sThetaList))
+       # print('SUM 1')
+        #print(len(sum1))
+        #print(len(sThetaList))
+        #print(len(curThetaList))
+        #print(len(curRList))
+        #print(2*numAng-1)
+        #tmpAng = concatenate((detectAng,pii/2+detectAng[1:]))
+        
+        #print(tmpAng)
 
 
 
+        #this is the final calculation loop
+        #we have radius and angle from this specific sphere
+        #use those values to calculate field from this sphere for each angle which
+        #is an in order calculate adding to the final Efield
+        for oi in range(numAng):
+            #distance from sphere for this specific angle
+            #print()
+            r_s_d = linalg.norm(sRList[oi])
 
-#function MeiCoeffs
-#calculates the amplitude scattering matrix elements, and efficiencies for extinction, total scattering and backscattering for a given size parameter and relative refractive index(p494)
-#INPUTS
-#x is the size parameter, x = k*r = 2*pi/lambdaFS * r
-#refRel is the refraction index of the medium
-#################################################################
+            #we want to use the current radius wrt sphere for the calculation
+            #E = exp(1.j*k*(r_s_d-z)) / (-1.j*k*r_s_d) * S1[oi]
+            E = exp(1.j*k*(r_s_d-z)) / (-1.j) * S1[oi]
+            #but the final cummulative field is wrt the radius' and angles from origin
+            #E = E**2
+            #REMOVE abs(E)**2 for multiple spheres
+            Efield[ri][oi] = add(Efield[ri][oi], E)
+            #print('Field at r: ' + str(r) + ' and angle: ' + str(t) + ' = ' + str(real(E)))
 
-#NSTOP is the real number of terms used for convergence in calculations,
-#int NSTOP = x + 4*x^(1/3) +2
-
-#NMX is taken as Max(NSTOP,abs(mx))+15 and D_NMX = 0.0 +i0.0 (pg492)
-
-
-
-
+            #print(E)
+            Etot[oi] = add(Etot[oi], E)#current sphere only for debugging
+            
+        #end sphere loop
+    #end radius loop
+    return Etot, Efield
